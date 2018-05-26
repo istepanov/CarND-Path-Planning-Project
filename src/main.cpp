@@ -233,25 +233,41 @@ int main() {
                     }
 
                     bool too_close = false;
+                    bool shift_left_ok = (lane > 0);
+                    bool shift_right_ok = (lane < 2);
 
                     for (int i = 0; i < sensor_fusion.size(); i++) {
+                        double vx = sensor_fusion[i][3];
+                        double vy = sensor_fusion[i][4];
+                        double s = sensor_fusion[i][5];
                         float d = sensor_fusion[i][6];
-                        if ((d < 4 + 4 * lane) && (d > 4 * lane)) {
-                            double vx = sensor_fusion[i][3];
-                            double vy = sensor_fusion[i][4];
-                            double check_speed = sqrt(vx * vx + vy + vy);
-                            double check_car_s = sensor_fusion[i][5];
 
-                            check_car_s += (double)prev_size * .02 * check_speed;
+                        double speed = sqrt(vx * vx + vy + vy);
+                        double check_car_s = s + ((double)prev_size * .02 * speed);
+
+                        if ((d < 4 + 4 * lane) && (d > 4 * lane)) {     // current lane
                             if (check_car_s > car_s && check_car_s - car_s < 30) {
                                 too_close = true;
-                                break;
+                            }
+                        } else if (lane > 0 && ((d < 4 + 4 * (lane - 1)) && (d > 4 * (lane - 1)))) {    // lane to the left
+                            if (check_car_s - car_s > -20 && check_car_s - car_s < 30) {
+                                shift_left_ok = false;
+                            }
+                        } else if (lane < 2 && ((d < 4 + 4 * (lane + 1)) && (d > 4 * (lane + 1)))) {    // lane to the right
+                            if (check_car_s - car_s > -20 && check_car_s - car_s < 30) {
+                                shift_right_ok = false;
                             }
                         }
                     }
 
                     if (too_close) {
-                        ref_velocity -= .224;   // ~ 5 m/s^2
+                        if (shift_left_ok) {
+                            lane -= 1;
+                        } else if (shift_right_ok) {
+                            lane += 1;
+                        } else {
+                            ref_velocity -= .224;   // ~ 5 m/s^2
+                        }
                     } else if (ref_velocity < 49.5) {
                         ref_velocity += .224;
                     }
