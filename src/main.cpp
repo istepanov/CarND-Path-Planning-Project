@@ -232,20 +232,29 @@ int main() {
                         car_s = end_path_s;
                     }
 
+                    // flag that indicates that we are too close to a vehicle in front of us
                     bool too_close = false;
+
+                    // flag that indicates it's safe to shift to the left lane (relative to current lane)
                     bool shift_left_ok = (lane > 0);
+
+                    // flag that indicates it's safe to shift to the right lane (relative to current lane)
                     bool shift_right_ok = (lane < 2);
 
                     for (int i = 0; i < sensor_fusion.size(); i++) {
+                        // sensor fusion data for a particular target vehicle
                         double vx = sensor_fusion[i][3];
                         double vy = sensor_fusion[i][4];
                         double s = sensor_fusion[i][5];
                         float d = sensor_fusion[i][6];
 
+                        // target car speed
                         double speed = sqrt(vx * vx + vy + vy);
+
+                        // where target car will be in the future
                         double check_car_s = s + ((double)prev_size * .02 * speed);
 
-                        if ((d < 4 + 4 * lane) && (d > 4 * lane)) {     // current lane
+                        if ((d < 4 + 4 * lane) && (d > 4 * lane)) {                                     // current lane
                             if (check_car_s > car_s && check_car_s - car_s < 30) {
                                 too_close = true;
                             }
@@ -260,15 +269,22 @@ int main() {
                         }
                     }
 
+                    // we are too close to a vehicle in front of us. Need to take an action
                     if (too_close) {
                         if (shift_left_ok) {
+                            // move to a lane to the left
                             lane -= 1;
                         } else if (shift_right_ok) {
+                            // move to a lane to the left
                             lane += 1;
                         } else {
-                            ref_velocity -= .224;   // ~ 5 m/s^2
+                            // can't change lanes. Slowing down.
+                            // ~ 5 m/s^2
+                            ref_velocity -= .224;
                         }
                     } else if (ref_velocity < 49.5) {
+                        // no cars in front of us, we can go faster!
+                        // (below speed limit, of cause)
                         ref_velocity += .224;
                     }
 
@@ -280,6 +296,8 @@ int main() {
                     double ref_yaw =deg2rad(car_yaw);
 
                     if (prev_size < 2) {
+                        // not enough previous points,
+                        // let's infer using current car location and orientation
                         double prev_car_x = car_x - cos(car_yaw);
                         double prev_car_y = car_y - sin(car_yaw);
 
@@ -292,6 +310,7 @@ int main() {
                         ref_x = previous_path_x[prev_size - 1];
                         ref_y = previous_path_y[prev_size - 1];
 
+                        // calculate reference yaw using previous points
                         double ref_x_prev = previous_path_x[prev_size - 2];
                         double ref_y_prev = previous_path_y[prev_size - 2];
                         ref_yaw = atan2(ref_y - ref_y_prev, ref_x - ref_x_prev);
@@ -303,24 +322,24 @@ int main() {
                         ptsy.push_back(ref_y);
                     }
 
+                    // define 3 next waypoints
                     vector<double> next_wp0 = getXY(
-                        car_s+30, 2 + 4 * lane, map_waypoints_s, map_waypoints_x, map_waypoints_y
+                        car_s + 30, 2 + 4 * lane, map_waypoints_s, map_waypoints_x, map_waypoints_y
                     );
                     vector<double> next_wp1= getXY(
-                        car_s+60, 2 + 4 * lane, map_waypoints_s, map_waypoints_x, map_waypoints_y
+                        car_s + 60, 2 + 4 * lane, map_waypoints_s, map_waypoints_x, map_waypoints_y
                     );
                     vector<double> next_wp2 = getXY(
-                        car_s+90, 2 + 4 * lane, map_waypoints_s, map_waypoints_x, map_waypoints_y
+                        car_s + 90, 2 + 4 * lane, map_waypoints_s, map_waypoints_x, map_waypoints_y
                     );
-
                     ptsx.push_back(next_wp0[0]);
                     ptsx.push_back(next_wp1[0]);
                     ptsx.push_back(next_wp2[0]);
-
                     ptsy.push_back(next_wp0[1]);
                     ptsy.push_back(next_wp1[1]);
                     ptsy.push_back(next_wp2[1]);
 
+                    // convert pints to car reference system
                     for (int i = 0; i < ptsx.size(); i++) {
                         double shift_x = ptsx[i] - ref_x;
                         double shift_y = ptsy[i] - ref_y;
@@ -329,24 +348,29 @@ int main() {
                         ptsy[i] = (shift_x * sin(-ref_yaw) + shift_y * cos(-ref_yaw));
                     }
 
+                    // spline magic
                     tk::spline s;
                     s.set_points(ptsx, ptsy);
 
+                    // theses are the x and y values we are going to send back to the simulator
                     vector<double> next_x_vals;
                     vector<double> next_y_vals;
 
+                    // push back all previous points
                     for (int i = 0; i < previous_path_x.size(); i++) {
                         next_x_vals.push_back(previous_path_x[i]);
                         next_y_vals.push_back(previous_path_y[i]);
                     }
 
-                    double target_x = 30.0;
+                    // target location
+                    double target_x = 30.0;     // meters
                     double target_y = s(target_x);
                     double target_distance = sqrt(target_x * target_x + target_y * target_y);
 
+                    // split path to target locatoin into intermediate points,
+                    // according to reference velocity
                     double x_add_on = 0.0;
                     double N = (target_distance / (.02 * ref_velocity / 2.24));
-
                     for (int i = 1; i < 50 - previous_path_x.size(); i++) {
                         double x_point = x_add_on + target_x / N;
                         double y_point = s(x_point);
@@ -366,6 +390,7 @@ int main() {
                         next_y_vals.push_back(y_point);
                     }
 
+                    // send data back to the simulator
                     msgJson["next_x"] = next_x_vals;
                     msgJson["next_y"] = next_y_vals;
 
